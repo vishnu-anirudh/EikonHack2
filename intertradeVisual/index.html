@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>World Trade Volume (2011)</title>
+    <html>
+    <head>
+        <script type="text/javascript" src="http://mbostock.github.com/d3/d3.v2.js"></script>
+        <script charset="utf-8"src="http://d3js.org/d3.v3.min.js"></script>
+        <script charset="utf-8" src="http://d3js.org/d3.geo.projection.v0.js"></script>
+        <script src="http://d3js.org/topojson.v1.min.js"></script>
+
+        <script charset="utf-8"src="http://d3js.org/queue.v1.min.js"></script>
+        <style type="text/css">
+            body {
+                padding: 20px 0;
+                font-family: "HelveticaNeue-Light", "Helvetica Neue Light",
+                "Helvetica Neue", sans-serif;
+                font-weight: 300;
+                position: relative;
+
+
+            }
+            h1 {
+                text-rendering: optimizeLegibility;
+                font-weight: 300;
+            }
+            .header h1 {
+                display: inline-block;
+            }
+            noscript {
+                font-size: 2em;
+            }
+            .form-search {
+                padding-top: 15px;
+            }
+
+
+        svg {
+            border:1px #f5f5f5;
+        }
+
+        /*.background {
+                fill: #eee;
+        }*/
+
+        #countries path {
+            fill: #f5f5f5;
+            stroke: #fff;
+        }
+
+        #circles path {
+            fill: none;
+            stroke: #32cd32;
+        }
+
+        .legend text {
+                fill: #333333;
+        }
+
+    </style>
+
+
+</head>
+
+<body>
+
+<div class="header">
+    <h1>World Trade Volume Of 2011</h1>
+    <aside style="margin-left:700px;">
+        <p>show: <select id="show">
+            <option value="gdp">Gross Domestic Product</option>
+            <option value="fdi">Foreign Direct Investment</option>
+            <option value="tariff">Tariff Rate</option>
+        </select>
+            trade: <select id="trade">
+                <option value="export">Export Volume</option>
+                <option value="import">Import Volume</option>
+            </select>
+    </aside>
+   <!-- <aside style="margin-left:0px;">
+    <form class="form-search pull-right">
+        <div class="input-append">
+            <input type="text" class="span2 search-query" placeholder="Find a country" data-provide="typeahead" autocomplete="off">
+            <button type="submit" class="btn">Search</button>
+        </div>
+    </form>-->
+</div>
+
+<style type="text/css">
+
+                                          /*                               div.tooltip {
+        position: absolute;
+        text-align: center;
+        width: 60px;
+        height: 12px;
+        padding: 8px;
+        font: 10px sans-serif;
+        background: #ddd;
+        border: solid 1px #aaa;
+        border-radius: 8px;
+        pointer-events: none;
+    }
+*/
+</style>
+
+<div id="chart"></div>
+
+
+<script type="text/javascript">
+
+
+var w =1100,
+    h = 600;
+
+var useGreatCircles = true;
+
+d3.loadData = function() {
+    var loadedCallback = null;
+    var toload = {};
+    var data = {};
+
+    var loaded = function(name, d) {
+        delete toload[name];
+        data[name] = d;
+        return notifyIfAll();
+    };
+    var notifyIfAll = function() {
+        if ((loadedCallback != null) && d3.keys(toload).length === 0) {
+            loadedCallback(data);
+        }
+    };
+    var loader = {
+        json: function(name, url) {
+            toload[name] = url;
+            d3.json(url, function(d) {
+                return loaded(name, d);
+            });
+            return loader;
+        },
+        csv: function(name, url) {
+            toload[name] = url;
+            d3.csv(url, function(d) {
+                return loaded(name, d);
+            });
+            return loader;
+        },
+        onload: function(callback) {
+            loadedCallback = callback;
+            notifyIfAll();
+        }
+    };
+    return loader;
+};
+
+var projection = d3.geo.mercator()
+        .translate([540, 400])
+        .scale(180);
+
+/*
+
+ var projection = d3.geo.albers()
+ .origin([-500, 300])
+ .scale(100);
+ var projection = d3.geo.azimuthal()
+ .origin([80, 400])
+ .scale(200);
+
+ */
+
+var path = d3.geo.path()
+        .projection(projection);
+
+var force = d3.layout.force().size([w,h]);
+
+var svg = d3.select("body").append("svg")
+        .attr("width", w)
+        .attr("height", h)
+        .style("background-color","#c8c8c8");
+
+var countries = svg.append("g").attr("id", "countries");
+var centroids = svg.append("g").attr("id", "centroids");
+
+
+
+var countryCode = 'Country Code';
+var year = '2011';
+var countryName = 'Name';
+var maxRadius = 60;
+var secondmaxRadius = 55;
+var exportPartner = 'Export Partner';
+var importPartner = 'Import Partner';
+d3.loadData()
+        .json('countries', 'http://localhost:8887/world.json')
+        .csv('goodsexport', 'http://localhost:8887/goodsexport.csv')
+        .csv('goodsimport', 'http://localhost:8887/goodsimport.csv')
+        .csv('gdp', 'http://localhost:8887/gdp.csv')
+        .csv('nodes', 'http://localhost:8887/nodes.csv')
+        .csv('exportpartners','http://localhost:8887/exportPartners.csv')
+        .csv('importpartners','http://localhost:8887/importPartners.csv')
+        .csv('fdi','http://localhost:8887/fdi.csv')
+        .csv('tariff','http://localhost:8887/tariff.csv')
+        .onload(function(data) {
+            var gdpbyId = d3.map();
+            var goodsbyId = d3.map();
+            /*var exportpartner = d3.map();*/
+            var nodeDataByCode = {}, links = [];
+
+            var maxMagnitude = /*1805900031455;*/
+                    d3.max(data.goodsexport, function(d) { return parseFloat(d[year])});
+
+            var minMagnitude =
+                    d3.min(data.goodsexport, function(d) { return parseFloat(d[year])});
+
+            var meanMagnitude = d3.median(data.goodsexport, function(d) { return parseFloat(d[year])});
+
+            var maxColorMagnitude = /*15533800000000; */// the gdp of usa, which ranks 1st in the world in 2011
+                    d3.max(data.gdp, function(d) { return parseFloat(d[year])});
+
+            var minColorMagnitude =
+                    d3.min(data.gdp, function(d) { return parseFloat(d[year])});
+
+            var meanColorMagnitude = d3.median(data.gdp, function(d) { return parseFloat(d[year])});  /*the gdp of yemen, which ranks 90th in the world in 2011*/
+
+            var magnitudeFormat = d3.format(",.0f");
+
+
+            //var minColor = '#86cdeb', maxColor = '#800000';
+            var circleColor = d3.scale.log().domain([minColorMagnitude,meanColorMagnitude,maxColorMagnitude]).range(["#de1f2e", "#e4e4e4", "#0ca454"]);
+            var circleOpacity = d3.scale.log().domain([minColorMagnitude, maxColorMagnitude]).range([0.3, 1]);
+            var circleSize = d3.scale.linear().domain([minMagnitude,maxMagnitude]).range([5,35]);
+
+            countries.selectAll("path")
+                    .data(data.countries.features)
+                    .enter().append("path")
+                    .attr("d", path)
+                    .attr("class","countries")
+                    .style("fill","#979797");
+
+           function nodeCoords(node) {
+                var lon = parseFloat(node.Lon), lat = parseFloat(node.Lat);
+                if (isNaN(lon) || isNaN(lat)) return null;
+                return [lon, lat];
+            }
+
+            var nodes = [];
+
+            data.gdp.forEach(function(gdps) {
+                var countryid = gdps[countryCode];
+                var colorMagnitude = parseFloat(gdps[year]);
+                gdpbyId.set(countryid,colorMagnitude);
+            });
+
+
+
+            data.goodsexport.forEach(function(goodsexport) {
+                var countryid = goodsexport[countryCode];
+                var sizeMagnitude = parseFloat(goodsexport[year]);
+                goodsbyId.set(countryid,sizeMagnitude);
+            });
+
+            /*data.exportpartners.forEach(function(exportpartners) {
+                var countryid = exportpartners[countryCode];
+                var exportPartner = exportpartners[exportPartner];
+                exportpartnerbyId.set(countryid,exportPartner);
+            });*/
+
+            data.nodes.forEach(function(node) {
+                node.coords = nodeCoords(node);
+                node.projection = node.coords ? projection(node.coords) : undefined;
+                nodeDataByCode[node.Code] = node;
+
+                var coor = node.projection;
+                var radius = circleSize(goodsbyId.get(node.Code));
+                if (coor!=undefined)
+                nodes.push({
+                    preX: coor[0], preY: coor[1],
+                    x: coor[0], y: coor[1],
+                    code:node.Code, name: node.Name,
+                    radius: radius,
+                    preRadius: radius
+
+       });
+            });
+
+            var gdpLabel = function(d) {
+                var gdp = gdpbyId.get(d.code);
+                if (typeof gdp === 'undefined' || gdp.length == 0 ) {
+                    return d.name+ ": " + "Unavailable"
+                }
+                return d.name + "\n "
+                        + String(Number(gdpbyId.get(d.code)/1e9).toFixed(1))
+                        + "billion";
+            }
+
+            var exportLabel = function(d) {
+                var goodsexport = goodsbyId.get(d.code);
+                if (typeof goodsexport === 'undefined' || goodsexport.length == 0 ) {
+                    return d.name+ ": " + "Unavailable"
+                }
+                return d.name + "\n "
+                        + String(Number(goodsbyId.get(d.code)/1e9).toFixed(1))
+                        + "billion";
+            }
+
+
+
+            var force = d3.layout.force()
+                    .nodes(nodes)
+                    .size([w, h])
+                    .gravity(0)
+                    .charge(0)
+                    .friction(0.1)
+                   /* .on("tick", tick)*/
+                    .start();
+
+                 var centroid = centroids.selectAll("circle")
+                    .data(nodes)
+                    .enter()
+                    .append("circle")
+                    .attr("id", function(d){ return d.code;})
+                    /*.attr("cx", function(d) { return d.x } )
+                    .attr("cy", function(d) { return d.y } )*/
+                    .attr("r", function(d) {return circleSize(goodsbyId.get(d.code))/1.1})
+                    .attr("fill", function(d) { return circleColor(gdpbyId.get(d.code)) })
+                    .attr("opacity", 1)
+                    .attr("stroke","#0a242d")
+                    .attr("stroke-width",2)
+                    .attr("stroke-opacity","1")
+                    .append("title")
+                    .text(function(d) { return exportLabel(d); })
+
+            force.on("tick", function(e) {
+                var q = d3.geom.quadtree(nodes),
+                        i = 0,
+                        n = nodes.length;
+
+                while (++i < n) q.visit(collide(nodes[i]));
+
+                centroids.selectAll("circle")
+                        .attr("cx", function(d) { return d.x; })
+                        .attr("cy", function(d) { return d.y; });
+
+                centroids.selectAll("text")
+                        .attr('x', function(d) { return d.x; })
+                        .attr('y', function(d) { return d.y; })
+
+
+            centroids.selectAll("circle")
+                    .on('mouseover',function(d){
+                        d3.select(this)
+                                .style('cursor', 'pointer')
+                        // showValue(d);
+                    })
+                    .on('click',function(d){
+
+                        var a = 0,
+                                qq = nodes.length;
+                        while(++a < qq)
+                        {
+                            nodes[a].x = nodes[a].preX;
+                            nodes[a].y = nodes[a].preY;
+                            nodes[a].radius = nodes[a].preRadius;
+                        }
+
+                        var countryid= d3.select(this).attr("id");
+
+                            var i = 0;
+                            n = nodes.length;
+                            while(++i<n) if(nodes[i].code == countryid){
+                                var preId = i;
+                                nodes[i].radius = maxRadius;
+                            }
+
+                        var q = d3.geom.quadtree(nodes),
+                                k = 0,
+                                n = nodes.length;
+                        while (++k < preId) q.visit(collide(nodes[k]));
+                        k = k+1;
+                        while (++k < n && k!= preId) q.visit(collide(nodes[k]));
+
+                        centroids.selectAll('.place-label')
+                                .remove();
+
+
+                        if(trade.value == "export") {
+                        var ranking = 0;
+                        var ep = d3.map();
+                        data.exportpartners.forEach(function(exportpartners) {
+
+                            var exportcountry = exportpartners[countryCode];
+                            var exportpartner = exportpartners[exportPartner];
+
+                            if (exportcountry == countryid){
+                                ranking = ranking +1;
+                                var i = 0;
+                                n = nodes.length;
+                                while(++i<n) if(nodes[i].code == exportpartner){
+                                    var preId = i;
+                                    var partner = exportpartner;
+                                    nodes[i].radius = secondmaxRadius;
+
+                                }
+                                var q = d3.geom.quadtree(nodes),
+                                        k = 0,
+                                        n = nodes.length;
+                                while (++k < preId) q.visit(collide(nodes[k]));
+                                k = k+1;
+                                while (++k < n && k!= preId) q.visit(collide(nodes[k]));
+
+
+                            ep.set(partner,ranking);
+                            }
+
+
+
+                        });
+                    }
+                        if(trade.value == "import") {
+                            var ranking1 = 0;
+                            var ep = d3.map();
+                            data.importpartners.forEach(function(importpartners) {
+
+                                var importcountry = importpartners[countryCode];
+                                var importpartner = importpartners[importPartner];
+
+                                if (importcountry == countryid){
+                                    ranking1 = ranking1 +1;
+                                    var i = 0;
+                                    n = nodes.length;
+                                    while(++i<n) if(nodes[i].code == importpartner){
+                                        var preId = i;
+                                        var partner = importpartner;
+                                        nodes[i].radius = secondmaxRadius;
+
+                                    }
+                                    var q = d3.geom.quadtree(nodes),
+                                            k = 0,
+                                            n = nodes.length;
+                                    while (++k < preId) q.visit(collide(nodes[k]));
+                                    k = k+1;
+                                    while (++k < n && k!= preId) q.visit(collide(nodes[k]));
+
+
+                                    ep.set(partner,ranking1);
+                                }
+
+
+
+                            });
+                        }
+
+                        d3.select(this)
+                                .attr("stroke","#e50005")
+                                .attr("stroke-width",5)
+
+
+
+                        centroids.selectAll("circle")
+                                .transition().delay(1).duration(100)
+                                /*.attr("stroke","white")*/
+                                .attr("r", function(d) {return d.radius/1.1})
+                                .attr("cx", function(d) { return d.x; })
+                                .attr("cy", function(d) { return d.y; })
+
+
+                        centroids.selectAll("circle")
+                                .filter(function(d) { return d.code!=countryid })
+                                .attr("stroke","#0a242d")
+                                .attr("stroke-width",2);
+
+
+                        var text1 = centroids.selectAll('.place-label')
+                                .data(nodes)
+                                .enter()
+                                .append('text')
+                                .filter(function(d) { return d.code == countryid })
+                                .attr('class', 'place-label')
+                                .attr("cx", function(d) { return d.x; })
+                                .attr("cy", function(d) { return d.y; })
+                                .attr('text-anchor', 'middle')
+                                .attr('font-size','12')
+                                .attr("font-family", "Arial")
+                                .attr("font-weight", "bold")
+                                .attr("stroke", "#990099")
+                                .attr("stroke-width", ".5px")
+                                .attr("text-decoration", "underline")
+                                .attr("opacity","1")
+                                .text(function(d) { return d.name; });
+
+
+                        var text = centroids.selectAll('.place-label1')
+                                .data(nodes)
+                                .enter()
+                                .append('text')
+                                .filter(function(d) { return ep.has(d.code) })
+                                .attr('class', 'place-label')
+                                .attr('text-anchor', 'middle')
+                                .attr('font-size','12')
+                                .attr("font-family", "Arial")
+                                .attr("font-weight", "bold")
+                                .attr("stroke", "#990099")
+                                .attr("stroke-width", ".2px")
+                                .style("fill","#000000")
+                                .attr("text-decoration", "underline")
+                                .text(function(d) { return ep.get(d.code)+  "\n "
+                                        +  d.name; });
+
+                        /*centroids.selectAll('.place-label1')
+                                .data(nodes)
+                                .enter()
+                                .append("svg:rect")
+                                .filter(function(d) { return ep.has(d.code) })
+                                .attr("x", function(d) { return text1.node().getBBox().x })
+                                .attr("y", function(d) { return text1.node().getBBox().y })
+                                .attr("width", text1.node().getBBox().width)
+                                .attr("height", text1.node().getBBox().height)
+                                .style("fill", "red")
+                                .style("fill-opacity", ".3")
+                                .style("stroke", "#666")
+                                .style("stroke-width", "1.5px");*/
+
+                        /*div.transition()
+.duration(200)
+.style("opacity", 1);
+
+div .text(d.name)
+*//*.filter(function(d) { return d.code=countryid })*//*
+                                *//*.attr("cx", function(d) { return d3.select(this).attr("cx"); })
+                                .attr("cy", function(d) { return d3.select(this).attr("cy"); })*//*
+                                .style("left", d3.select(this).attr("cx") + "px")
+                                .style("top", (d3.select(this).attr("cy")) + "px");*/
+                    })
+
+
+
+                        force.resume();
+
+
+                    });
+
+
+
+
+            function collide(node) {
+
+                var r = node.radius+40,
+                        nx1 = node.x - r,
+                        nx2 = node.x + r,
+                        ny1 = node.y - r,
+                        ny2 = node.y + r;
+
+                return function(quad, x1, y1, x2, y2) {
+                    if (quad.point && (quad.point !== node)) {
+                        var x = node.x - quad.point.x,
+                                y = node.y - quad.point.y,
+                                l = Math.sqrt(x * x + y * y),
+                                r = node.radius + quad.point.radius;
+                        if (l < r) {
+                            l = (l - r) / l * .2;
+                            node.x -= x *= l;
+                            node.y -= y *= l;
+                            quad.point.x += x;
+                            quad.point.y += y;
+                        }
+
+                    }
+                    return x1 > nx2 || x2 < nx1 || y1 > ny2 || y2 < ny1;
+
+                };
+            }
+
+            function makeRange(from,to) {
+                var r = new Array();
+                for ( var i = from; i <= to; i++ ) {
+                    r.push(i);
+                }
+                return r;
+            }
+            var color = d3.scale.linear()
+                    .domain([-8, 0, 8])
+                    .range(["#de1f2e", "#e4e4e4", "#0ca454"]);
+
+            var gdppoints = makeRange(-8,8);
+            var ly = 600-30;
+            var lc = 800;
+
+            var legend = svg
+                    .append('g') // svg
+                    .attr('class','legend');
+
+            legend.append('rect')
+                    .attr('fill','#c8c8c8')
+                    .style('opacity',0.8)
+                    .attr('x',lc-120)
+                    .attr('y',ly-25)
+                    .attr('width',300)
+                    .attr('height',50);
+            legend.selectAll('.gdppoints')
+                    .data(gdppoints)
+                    .enter().append('rect')
+                    .attr('x',function(d) { return lc + d*10; })
+                    .attr('fill',function(d) { return color(d); })
+                    .attr('y',ly)
+                    .attr('width',9)
+                    .attr('height',10);
+            legend.append('text')
+                    .attr('x',lc-80)
+                    .attr('y',ly-9)
+                    .attr('text-anchor','start')
+                    .text('Gross Domestic Product (Billion)');
+            legend.append('text')
+                    .attr('x',lc-85)
+                    .attr('y',ly+9)
+                    .attr('text-anchor','end')
+                    .style('font-size','0.9em')
+                    .text('&0.04');
+            legend.append('text')
+                    .attr('x',lc-85)
+                    .attr('y',ly+23)
+                    .attr("font-family", "Arial")
+                    .attr("font-weight", "bold")
+                    .style("fill", "#de1f2e")
+                    .attr('text-anchor','end')
+                    .style('font-size','0.9em')
+                    .text('Tuvalu');
+
+            legend.append('text')
+                    .attr('x',lc+95)
+                    .attr('y',ly+9)
+                    .attr('text-anchor','start')
+                    .style('font-size','0.9em')
+                    .text('$16200');
+
+            legend.append('text')
+                    .attr('x',lc+165)
+                    .attr('y',ly+23)
+                    .attr("font-family", "Arial")
+                    .attr("font-weight", "bold")
+                    .style("fill", "#0ca454")
+                    .attr('text-anchor','end')
+                    .style('font-size','0.9em')
+                    .text('United States');
+
+            legend.append('rect')
+                    .attr('fill','url(#undefined)')
+                    .attr('x',lc+165)
+                    .attr('y',ly)
+                    .attr('width',10)
+                    .attr('height',10);
+            legend.append('text')
+                    .attr('x',lc+180)
+                    .attr('y',ly+9)
+                    .text('n/a');
+
+            d3.select("#show").on("change", function() {
+                showvalue = this.value;
+
+                if (showvalue == "tariff"){
+                    var maxColorMagnitudetariff = d3.max(data.tariff, function(d) { return parseFloat(d[year])});
+
+                    var minColorMagnitudetariff =
+                            d3.min(data.tariff, function(d) { return parseFloat(d[year])});
+
+                    var meanColorMagnitudetariff = /*d3.median(data.tariff, function(d) { return parseFloat(d[year])})*/2;
+                    var circleColortariff = d3.scale.linear().domain([minColorMagnitudetariff,meanColorMagnitudetariff,maxColorMagnitudetariff]).range(["#de1f2e", "#e4e4e4", "#0ca454"]);
+                    var showbyIdtariff = d3.map();
+                    data.tariff.forEach(function(values) {
+
+                        var countryidtariff = values[countryCode];
+                        var colorMagnitudetariff = parseFloat(values[year]);
+                        showbyIdtariff.set(countryidtariff,colorMagnitudetariff);
+
+
+                    });
+
+                    centroids.selectAll("circle")
+                            .transition().delay(1).duration(1000)
+                            .attr("fill", function(d) { return circleColortariff(showbyIdtariff.get(d.code)) })
+                    legend.selectAll('text').remove();
+                    legend.append('text')
+                            .attr('x',lc-35)
+                            .attr('y',ly-9)
+                            .attr('text-anchor','start')
+                            .text('Tariff Rate');
+                    legend.append('text')
+                            .attr('x',lc-85)
+                            .attr('y',ly+9)
+                            .attr('text-anchor','end')
+                            .style('font-size','0.9em')
+                            .text('0%');
+                    legend.append('text')
+                            .attr('x',lc-85)
+                            .attr('y',ly+23)
+                            .attr("font-family", "Arial")
+                            .attr("font-weight", "bold")
+                            .style("fill", "#de1f2e")
+                            .attr('text-anchor','end')
+                            .style('font-size','0.9em')
+                            .text('Hong Kong');
+
+                    legend.append('text')
+                            .attr('x',lc+95)
+                            .attr('y',ly+9)
+                            .attr('text-anchor','start')
+                            .style('font-size','0.9em')
+                            .text('21.77%');
+
+                    legend.append('text')
+                            .attr('x',lc+150)
+                            .attr('y',ly+23)
+                            .attr("font-family", "Arial")
+                            .attr("font-weight", "bold")
+                            .style("fill", "#0ca454")
+                            .attr('text-anchor','end')
+                            .style('font-size','0.9em')
+                            .text('Iran');
+
+                    legend.append('text')
+                            .attr('x',lc+180)
+                            .attr('y',ly+9)
+                            .text('n/a');
+
+
+                }
+                if (showvalue == "fdi"){
+                    var maxColorMagnitudefdi = d3.max(data.fdi, function(d) { return parseFloat(d[year])});
+
+                    var minColorMagnitudefdi =
+                            d3.min(data.fdi, function(d) { return parseFloat(d[year])});
+
+                    var meanColorMagnitudefdi = d3.median(data.fdi, function(d) { return parseFloat(d[year])});
+                    var circleColorfdi = d3.scale.linear().domain([minColorMagnitudefdi,meanColorMagnitudefdi,maxColorMagnitudefdi]).range(["#de1f2e", "#e4e4e4", "#0ca454"]);
+                    var showbyIdfdi = d3.map();
+                    data.fdi.forEach(function(values) {
+
+                        var countryidfdi = values[countryCode];
+                        var colorMagnitudefdi = parseFloat(values[year]);
+                        showbyIdfdi.set(countryidfdi,colorMagnitudefdi);
+                    });
+                    centroids.selectAll("circle")
+                            .transition().delay(1).duration(1000)
+                            .attr("fill", function(d) { return circleColorfdi(showbyIdfdi.get(d.code)) })
+                    legend.selectAll('text').remove();
+
+                    legend.append('text')
+                            .attr('x',lc-80)
+                            .attr('y',ly-9)
+                            .attr('text-anchor','start')
+                            .text('Foreign Direct Investment');
+                    legend.append('text')
+                            .attr('x',lc-85)
+                            .attr('y',ly+9)
+                            .attr('text-anchor','end')
+                            .style('font-size','0.9em')
+                            .text('&-6');
+                    legend.append('text')
+                            .attr('x',lc-85)
+                            .attr('y',ly+23)
+                            .attr("font-family", "Arial")
+                            .attr("font-weight", "bold")
+                            .style("fill", "#de1f2e")
+                            .attr('text-anchor','end')
+                            .style('font-size','0.9em')
+                            .text('Finland');
+
+                    legend.append('text')
+                            .attr('x',lc+95)
+                            .attr('y',ly+9)
+                            .attr('text-anchor','start')
+                            .style('font-size','0.9em')
+                            .text('&280');
+
+                    legend.append('text')
+                            .attr('x',lc+150)
+                            .attr('y',ly+23)
+                            .attr("font-family", "Arial")
+                            .attr("font-weight", "bold")
+                            .style("fill", "#0ca454")
+                            .attr('text-anchor','end')
+                            .style('font-size','0.9em')
+                            .text('China');
+                    legend.append('text')
+                            .attr('x',lc+180)
+                            .attr('y',ly+9)
+                            .text('n/a');
+
+                }
+                if (showvalue == "gdp"){
+                    var maxColorMagnitudegdp = d3.max(data.gdp, function(d) { return parseFloat(d[year])});
+
+                    var minColorMagnitudegdp =
+                            d3.min(data.gdp, function(d) { return parseFloat(d[year])});
+
+                    var meanColorMagnitudegdp = d3.median(data.gdp, function(d) { return parseFloat(d[year])});
+                    var circleColorgdp = d3.scale.log().domain([minColorMagnitudegdp,meanColorMagnitudegdp,maxColorMagnitudegdp]).range(["#de1f2e", "#e4e4e4", "#0ca454"]);
+                    var showbyIdgdp = d3.map();
+                    data.gdp.forEach(function(values) {
+
+                        var countryid = values[countryCode];
+                        var colorMagnitude = parseFloat(values[year]);
+                        showbyIdgdp.set(countryid,colorMagnitude);
+                    });
+                    centroids.selectAll("circle")
+                            .transition().delay(1).duration(1000)
+                            .attr("fill", function(d) { return circleColorgdp(showbyIdgdp.get(d.code)) })
+
+                    legend.selectAll('text').remove();
+                    legend.append('text')
+                            .attr('x',lc-80)
+                            .attr('y',ly-9)
+                            .attr('text-anchor','start')
+                            .text('Gross Domestic Product (Billion)');
+                    legend.append('text')
+                            .attr('x',lc-85)
+                            .attr('y',ly+9)
+                            .attr('text-anchor','end')
+                            .style('font-size','0.9em')
+                            .text('&0.04');
+                    legend.append('text')
+                            .attr('x',lc-85)
+                            .attr('y',ly+23)
+                            .attr("font-family", "Arial")
+                            .attr("font-weight", "bold")
+                            .style("fill", "#de1f2e")
+                            .attr('text-anchor','end')
+                            .style('font-size','0.9em')
+                            .text('Tuvalu');
+
+                    legend.append('text')
+                            .attr('x',lc+95)
+                            .attr('y',ly+9)
+                            .attr('text-anchor','start')
+                            .style('font-size','0.9em')
+                            .text('$16200');
+
+                    legend.append('text')
+                            .attr('x',lc+165)
+                            .attr('y',ly+23)
+                            .attr("font-family", "Arial")
+                            .attr("font-weight", "bold")
+                            .style("fill", "#0ca454")
+                            .attr('text-anchor','end')
+                            .style('font-size','0.9em')
+                            .text('United States');
+
+                    legend.append('text')
+                            .attr('x',lc+180)
+                            .attr('y',ly+9)
+                            .text('n/a');
+
+                }
+
+
+
+            });
+
+            d3.select("#trade").on("change", function() {
+                /*force.stop()*/
+                tradevalue = this.value;
+
+                if (tradevalue == "import"){
+                    var maxMagnitudeimport = d3.max(data.goodsimport, function(d) { return parseFloat(d[year])});
+
+                    var minMagnitudeimport =d3.min(data.goodsimport, function(d) { return parseFloat(d[year])});
+
+                    var circleSizeimport = d3.scale.linear().domain([minMagnitudeimport,maxMagnitudeimport]).range([5,35]);
+
+                    var tradebyIdimport = d3.map();
+
+                    data.goodsimport.forEach(function(values) {
+                        var countryid = values[countryCode];
+                        var sizeMagnitude = parseFloat(values[year]);
+                        tradebyIdimport.set(countryid,sizeMagnitude);
+                    });
+
+                    var a = 0,
+                        qq = nodes.length;
+                    centroids.selectAll('.place-label')
+                            .remove();
+                    centroids.selectAll("circle")
+                            .attr("stroke","#0a242d")
+                            .attr("stroke-width",2);
+                    while(++a < qq)
+                    {
+                        nodes[a].x = nodes[a].preX;
+                        nodes[a].y = nodes[a].preY;
+                        nodes[a].radius = circleSizeimport(tradebyIdimport.get(nodes[a].code));
+                        /*nodes[a].Preradius = circleSizeimport(tradebyIdimport.get(nodes[a].code));*/
+                    }
+
+                    var importLabel = function(d) {
+                        var goodsimport = tradebyIdimport.get(d.code);
+                        if (typeof goodsimport === 'undefined' || goodsimport.length == 0 ) {
+                            return d.name+ ": " + "Unavailable"
+                        }
+                        return d.name + "\n "
+                                + String(Number(tradebyIdimport.get(d.code)/1e9).toFixed(1))
+                                + "billion";
+                    }
+
+
+                    centroids.selectAll("circle")
+                            .transition(1000).delay(100).duration(1000)
+                            .attr("r", function(d) {return d.radius/1.1 })
+
+                    /*centroid.selectAll("circle").remove;
+
+                    centroids.append("title")
+                            .text(function(d) { return importLabel(d); })*/
+
+                    force.on("tick", function(e) {
+                        var q = d3.geom.quadtree(nodes),
+                                i = 0,
+                                n = nodes.length;
+
+                        while (++i < n) q.visit(collide(nodes[i]));
+
+                        centroids.selectAll("circle")
+                                .attr("cx", function(d) { return d.x; })
+                                .attr("cy", function(d) { return d.y; });
+
+                        centroids.selectAll("text")
+                                .attr('x', function(d) { return d.x; })
+                                .attr('y', function(d) { return d.y; })
+
+                        force.resume();
+
+
+                    });
+
+
+                    }
+
+                if (tradevalue == "export"){
+                    var maxMagnitudeexport = d3.max(data.goodsexport, function(d) { return parseFloat(d[year])});
+
+                    var minMagnitudeexport =d3.min(data.goodsexport, function(d) { return parseFloat(d[year])});
+
+                    var circleSizeexport = d3.scale.linear().domain([minMagnitudeexport,maxMagnitudeexport]).range([5,35]);
+
+                    var tradebyIdexport = d3.map();
+
+                    data.goodsimport.forEach(function(values) {
+                        var countryid = values[countryCode];
+                        var sizeMagnitude = parseFloat(values[year]);
+                        tradebyIdexport.set(countryid,sizeMagnitude);
+                    });
+                    var a = 0,
+                            qq = nodes.length;
+                    while(++a < qq)
+                    {
+                        nodes[a].x = nodes[a].preX;
+                        nodes[a].y = nodes[a].preY;
+                        nodes[a].radius = nodes[a].preRadius;
+                    }
+                    centroids.selectAll('.place-label')
+                            .remove();
+                    centroids.selectAll("circle")
+                            .attr("stroke","#0a242d")
+                            .attr("stroke-width",2);
+                   /* var a = 0,
+                            qq = nodes.length;
+                    while(++a < qq)
+                    {
+                        nodes[a].radius = circleSizeexport(tradebyIdexport.get(nodes[a].code));
+                        nodes[a].Preradius = circleSizeexport(tradebyIdexport.get(nodes[a].code));
+                    }*/
+
+                    var exportLabel = function(d) {
+                        var goodsimport = tradebyIdimport.get(d.code);
+                        if (typeof goodsimport === 'undefined' || goodsimport.length == 0 ) {
+                            return d.name+ ": " + "Unavailable"
+                        }
+                        return d.name + "\n "
+                                + String(Number(tradebyIdimport.get(d.code)/1e9).toFixed(1))
+                                + "billion";
+                    }
+
+
+                    centroids.selectAll("circle")
+                            .transition().delay(1).duration(1000)
+                            .attr("r", function(d) {return d.radius/1.1 })
+
+                    /*centroid.selectAll("circle").remove;
+
+                     centroids.append("title")
+                     .text(function(d) { return importLabel(d); })*/
+
+                    force.on("tick", function(e) {
+                        var q = d3.geom.quadtree(nodes),
+                                i = 0,
+                                n = nodes.length;
+
+                        while (++i < n) q.visit(collide(nodes[i]));
+
+                        centroids.selectAll("circle")
+                                .attr("cx", function(d) { return d.x; })
+                                .attr("cy", function(d) { return d.y; });
+
+                        centroids.selectAll("text")
+                                .attr('x', function(d) { return d.x; })
+                                .attr('y', function(d) { return d.y; })
+
+                        force.resume();
+
+
+                    });
+
+
+                }
+
+
+
+            });
+
+
+
+
+
+        });
+
+
+
+</script>
+
+<div id="about">
+    <h3>Intruduction to the visualization</h3>
+    <p>
+        This map visualizes the Import and Export Volume worldwide in 2011..
+    </p>
+    <p>
+        The size of the circle hovering on each country represents its export/import volume in 2011.
+        Export and import volume can be selected using the drop-down Menu of Trade.
+    </p>
+    <p>
+        High value of Gross Domestic Product (GDP) is represented as increasingly dark shades
+        of green and low value as shades of red.Also Foreign Direct Investment (FDI) and Tariff Rate
+        which can be switched between each other in the drop-down
+        menu of Show are clearly visible in the change of colors.
+    </p>
+    <p>
+        Once clicking on a certain circle, the circle will scale up as well as other
+        circles which represent its biggest trade partners with their own ranking on it.
+    </p>
+
+
+</body>
+</html>

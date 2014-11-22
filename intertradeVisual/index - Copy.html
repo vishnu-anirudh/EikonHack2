@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <html>
+    <head>
+        <script type="text/javascript" src="http://mbostock.github.com/d3/d3.v2.js"></script>
+        <script charset="utf-8"src="http://d3js.org/d3.v3.min.js"></script>
+        <script charset="utf-8" src="http://d3js.org/d3.geo.projection.v0.js"></script>
+        <script src="http://d3js.org/topojson.v1.min.js"></script>
+
+        <script charset="utf-8"src="http://d3js.org/queue.v1.min.js"></script>
+        <style type="text/css">
+
+
+        svg {
+            border:1px solid gray
+        }
+
+        #countries path {
+            fill: #f5f5f5;
+            stroke: #fff;
+        }
+
+        #circles path {
+            fill: none;
+            stroke: #32cd32;
+        }
+
+
+    </style>
+</head>
+
+<body>
+
+
+
+<div id="chart"></div>
+<script type="text/javascript">
+
+var w =960,
+        h = 600;
+
+
+
+
+var useGreatCircles = true;
+
+d3.loadData = function() {
+    var loadedCallback = null;
+    var toload = {};
+    var data = {};
+
+    var loaded = function(name, d) {
+        delete toload[name];
+        data[name] = d;
+        return notifyIfAll();
+    };
+    var notifyIfAll = function() {
+        if ((loadedCallback != null) && d3.keys(toload).length === 0) {
+            loadedCallback(data);
+        }
+    };
+    var loader = {
+        json: function(name, url) {
+            toload[name] = url;
+            d3.json(url, function(d) {
+                return loaded(name, d);
+            });
+            return loader;
+        },
+        csv: function(name, url) {
+            toload[name] = url;
+            d3.csv(url, function(d) {
+                return loaded(name, d);
+            });
+            return loader;
+        },
+        onload: function(callback) {
+            loadedCallback = callback;
+            notifyIfAll();
+        }
+    };
+    return loader;
+};
+
+
+
+var projection = d3.geo.mercator()
+        .translate([480, 250])
+        .scale(130);
+
+/*
+
+ var projection = d3.geo.albers()
+ .origin([-500, 300])
+ .scale(100);
+ var projection = d3.geo.azimuthal()
+ .origin([80, 400])
+ .scale(200);
+
+ */
+
+var path = d3.geo.path()
+        .projection(projection);
+
+var force = d3.layout.force().size([w,h]);
+
+var svg = d3.select("body").append("svg")
+        .attr("width", w)
+        .attr("height", h);
+
+var countries = svg.append("g").attr("id", "countries");
+var centroids = svg.append("g").attr("id", "centroids");
+
+
+
+var countryCode = 'Country Code';
+var year = '2011';
+var countryName = 'Name';
+var maxRadius = 30;
+
+d3.loadData()
+        .json('countries', 'http://localhost:8888/world.json')
+        .csv('goodsexport', 'http://localhost:8888/goodsexport.csv')
+        .csv('gdp', 'http://localhost:8888/gdp.csv')
+        .csv('nodes', 'http://localhost:8888/nodes.csv')
+        .onload(function(data) {
+            var gdpbyId = d3.map();
+            var goodsbyId = d3.map();
+            var nodeDataByCode = {}, links = [];
+
+
+
+
+
+
+            var maxMagnitude = 1805900031455;
+                    /*d3.max(data.goodsexport, function(d) { return parseFloat(d[year])});*/
+
+            var minMagnitude =
+                    d3.min(data.goodsexport, function(d) { return parseFloat(d[year])});
+
+            var meanMagnitude = 10090000000;
+
+            var maxColorMagnitude = 15533800000000; // the gdp of usa, which ranks 1st in the world in 2011
+                    /*d3.max(data.gdp, function(d) { return parseFloat(d[year])});*/
+
+            var meanColorMagnitude = 32831000000; // the gdp of yemen, which ranks 90th in the world in 2011
+
+            var meanSizeMagnitude = 32831000000;
+
+            var minColorMagnitude =
+                    d3.min(data.gdp, function(d) { return parseFloat(d[year])});
+
+            var magnitudeFormat = d3.format(",.0f");
+
+
+            //var minColor = '#86cdeb', maxColor = '#800000';
+            var circleColor = d3.scale.log().domain([minColorMagnitude,meanColorMagnitude,maxColorMagnitude]).range(["#de1f2e", "#e4e4e4", "#0ca454"]);
+            var circleOpacity = d3.scale.log().domain([minColorMagnitude, maxColorMagnitude]).range([0.3, 1]);
+            var circleSize = d3.scale.linear().domain([minMagnitude,maxMagnitude]).range([5,15]);
+
+            countries.selectAll("path")
+                    .data(data.countries.features)
+                    .enter().append("path")
+                    .attr("d", path)
+                    .attr("class","countries")
+                    .style("fill","#99bfe1");
+
+           function nodeCoords(node) {
+                var lon = parseFloat(node.Lon), lat = parseFloat(node.Lat);
+                if (isNaN(lon) || isNaN(lat)) return null;
+                return [lon, lat];
+            }
+
+            var nodes = [];
+
+            data.gdp.forEach(function(gdps) {
+                var countryid = gdps[countryCode];
+                var colorMagnitude = parseFloat(gdps[year]);
+                gdpbyId.set(countryid,colorMagnitude);
+            });
+
+
+
+            data.goodsexport.forEach(function(goodsexport) {
+                var countryid = goodsexport[countryCode];
+                var sizeMagnitude = parseFloat(goodsexport[year]);
+                goodsbyId.set(countryid,sizeMagnitude);
+            });
+
+            data.nodes.forEach(function(node) {
+                node.coords = nodeCoords(node);
+                node.projection = node.coords ? projection(node.coords) : undefined;
+                nodeDataByCode[node.Code] = node;
+
+                var coor = node.projection;
+                var radius = circleSize(goodsbyId.get(node.Code));
+                if (coor!=undefined)
+                nodes.push({
+                    preX: coor[0], preY: coor[1],
+                    x: coor[0], y: coor[1],
+                    code:node.Code, name: node.Name,
+                    radius: radius,
+                    preRadius: radius
+
+       });
+
+
+            });
+          /*var gdpbyID = d3.nest()
+                    .key(function(d) { return d.countryCode; })
+                    .entries(function(d){return d[year]});*/
+
+//            var gdpIn = function(obj) {
+//                return obj.gdp ? obj.gdp[year] : undefined;
+//            }
+//
+//            var gdpColor = function(d) {
+//                var gdp = gdpIn(d);
+//                if (typeof gdp === 'undefined' || gdp.length == 0 ) {
+//                    return "url(#undefined)"; // webkit doesn't handle patterns well
+//                    //return '#e4e4e4';
+//                }
+//                return circleColor(Number(gdp).toFixed());
+//            }
+
+            /*var gdpIn = function(obj) {
+                return obj.gdp ? obj.gdp[year] : undefined;
+            }*/
+
+            var gdpLabel = function(d) {
+                var gdp = gdpbyId.get(d.code);
+                if (typeof gdp === 'undefined' || gdp.length == 0 ) {
+                    return d.name+ ": " + "Unavailable"
+                }
+                return d.name + "\n "
+                        + String(Number(gdpbyId.get(d.code)/1e9).toFixed(1))
+                        + "billion";
+            }
+
+            var force = d3.layout.force()
+                    .nodes(nodes)
+                    .size([w, h])
+                    .gravity(0.005)
+                    .charge(0)
+                    .friction(0.1)
+                   /* .on("tick", tick)*/
+                    .start();
+
+                 centroids.selectAll("circle")
+                    .data(nodes)
+                    .enter()
+                    .append("circle")
+                    .attr("id", function(d){ return d.code;})
+                    /*.attr("cx", function(d) { return d.x } )
+                    .attr("cy", function(d) { return d.y } )*/
+                    .attr("r", function(d) {return circleSize(goodsbyId.get(d.code))/1.1})
+                    .attr("fill", function(d) { return circleColor(gdpbyId.get(d.code)) })
+                    .attr("opacity", 3)
+                    .attr("stroke","#000000")
+                    .attr("stroke-width","2")
+                    .attr("stroke-opacity","1")
+                    .append("title")
+                    .text(function(d) { return gdpLabel(d); })
+
+
+
+            force.on("tick", function(e) {
+                var q = d3.geom.quadtree(nodes),
+                        i = 0,
+                        n = nodes.length;
+
+                while (++i < n) q.visit(collide(nodes[i]));
+
+                centroids.selectAll("circle")
+                        .attr("cx", function(d) { return d.x; })
+                        .attr("cy", function(d) { return d.y; });
+
+            });
+
+            centroids.selectAll("circle")
+                    .on('mouseover',function(d){
+                        d3.select(this)
+                                .style('cursor', 'pointer')
+                        // showValue(d);
+                    })
+                    .on('click',function(d){
+
+                        var a = 0,
+                                qq = nodes.length;
+                        while(++a < qq)
+                        {
+                            nodes[a].x = nodes[a].preX;
+                            nodes[a].y = nodes[a].preY;
+                            nodes[a].radius = nodes[a].preRadius;
+                        }
+
+
+
+                        var countryid= d3.select(this).attr("id");
+
+
+                            var i = 0;
+                            n = nodes.length;
+                            while(++i<n) if(nodes[i].code == countryid){
+                                var preId = i;
+                                nodes[i].radius = maxRadius;
+                            }
+
+                        /*var q = d3.geom.quadtree(nodes),
+                                k = 0,
+                                n = nodes.length;
+
+                        while (++k < n && k!= preId) q.visit(collide(nodes[k]));*/
+                        var q = d3.geom.quadtree(nodes),
+                                k = 0,
+                                n = nodes.length;
+                        /*q.visit(collide(nodes[preId]));*/
+                        while (++k < preId) q.visit(collide(nodes[k]));
+                        k = k+1;
+                        while (++k < n && k!= preId) q.visit(collide(nodes[k]));
+
+
+                        d3.select(this)
+                                .attr("stroke","#272019")
+
+
+                        centroids.selectAll("circle")
+                                .transition().duration(30)
+                                /*.attr("stroke","white")*/
+                                .attr("r", function(d) {return d.radius/1.1})
+                                .attr("cx", function(d) { return d.x; })
+                                .attr("cy", function(d) { return d.y; });
+
+
+                        centroids.selectAll("circle")
+
+                                .filter(function(d) { return d.code!=countryid })
+                                .attr("stroke","#000000")
+                                /*.attr("r", function(d) {return d.preRadius})
+                                .transition().delay(10).duration(1000)*/
+
+                        force.resume();
+
+
+                    });
+
+
+
+
+            function collide(node) {
+
+                var r = node.radius+40+20,
+                        nx1 = node.x - r,
+                        nx2 = node.x + r,
+                        ny1 = node.y - r,
+                        ny2 = node.y + r;
+
+                return function(quad, x1, y1, x2, y2) {
+                    if (quad.point && (quad.point !== node)) {
+                        var x = node.x - quad.point.x,
+                                y = node.y - quad.point.y,
+                                l = Math.sqrt(x * x + y * y),
+                                r = node.radius + quad.point.radius;
+                        if (l < r) {
+                            l = (l - r) / l * .2;
+                            node.x -= x *= l;
+                            node.y -= y *= l;
+                            quad.point.x += x;
+                            quad.point.y += y;
+                        }
+
+                    }
+                    return x1 > nx2 || x2 < nx1 || y1 > ny2 || y2 < ny1;
+
+                };
+            }
+        });
+
+</script>
+</body>
+</html>
