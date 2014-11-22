@@ -23,5 +23,5 @@ d3.csv('data/companylist.csv', function(data) {
     .style('margin', '2px 0')
     .style('background', 'red')
     .style('white-space', 'nowrap')
-    .text(function(d) { return d.Company; });
+    .text(function(d) { return d.Company + ' - ' + '£' + Math.round(d.MarketCapInMillions) + 'm'; });
 });
