@@ -5,14 +5,296 @@
   <title>EikonHack 2 - Team Athena</title>
   <link rel="stylesheet" href="webui/css/EikonWebUI.css">
   <link rel="stylesheet" href="styles/base.css">
+  <script src="http://d3js.org/d3.v3.min.js"></script>
+  <script src="http://d3js.org/topojson.v1.min.js"></script>
+  <script src="//code.jquery.com/jquery-2.1.1.min.js"></script>
+  <style type="text/css">
+
+  .background {
+  fill: none;
+        pointer-events: all;
+  }
+  /* No style rules here yet */    
+  #state-borders {
+  fill: none;
+  stroke: #fff;
+          stroke-width: 1.5px;
+          stroke-linejoin: round;
+          stroke-linecap: round;
+          pointer-events: none;
+  }   
+
+  canvas, svg {
+  position: absolute;
+  top: 200px;
+  left:300px;
+
+  }
+
+
+  </style>
+
+  
 </head>
-<body>
-  <div id="country-info"></div>
-  <div class="countries"></div>
-  <div class="chart"></div>
-  <script type="text/javascript" charset="utf-8" src="scripts/d3.min.js"></script>
-  <script type="text/javascript" charset="utf-8" src="scripts/jquery-2.1.1.min.js"></script>
-  <script type="text/javascript" charset="utf-8" src="scripts/MSF.js"></script>
-  <script type="text/javascript" charset="utf-8" src="scripts/eikonhack.js"></script>
+<body class="">
+
+<header class="mainHeader">
+<span class="title">
+
+<p class="monospace positive">Grid Numbers Positive</p>
+</span>
+
+
+</header>
+
+<div id="chart">
+<canvas id="background"></canvas>
+<canvas id="foreground"></canvas>
+<svg></svg>
+</div>
+
+
+
+<div id="myCanvas" width="300" height="300" style="border: 1px solid #000000;"></div>
+
+<script type="text/javascript">
+
+console.log(screen.height);
+console.log(screen.width);
+
+//Width and height
+var w = 1200;
+var h = 900;
+
+//Define map projection
+  var projection = d3.geo.azimuthalEquidistant()
+.translate([w/2, h/2])
+  .scale([500]);
+
+  //Define path generator
+var path = d3.geo.path()
+  .projection(projection);
+
+  var zoom = d3.behavior.zoom()
+  .translate(projection.translate())
+.scale(projection.scale())
+  .on("zoom", zoomed);
+
+  var svg = d3.select("body")
+  .append("svg")
+  .attr("width", w)
+  .attr("height", h);
+
+  svg.append("rect")
+  .attr("class", "background")
+  .attr("width", w)
+  .attr("height", h)
+  .on("click", clicked);
+
+  var g = svg.append("g");
+
+
+
+
+  //Create SVG element
+
+  var Color = d3.scale.log().domain([1568.4,349010.6599999998,10001672134.259998]).range(["#de1f2e", "#e4e4e4", "#0ca454"]);
+  //Load in GeoJSON data
+
+
+
+  d3.loadData = function() {
+    var loadedCallback = null;
+    var toload = {};
+    var data = {};
+
+    var loaded = function(name, d) {
+      delete toload[name];
+      data[name] = d;
+      return notifyIfAll();
+    };
+    var notifyIfAll = function() {
+      if ((loadedCallback != null) && d3.keys(toload).length === 0) {
+        loadedCallback(data);
+      }
+    };
+    var loader = {
+json: function(name, url) {
+        toload[name] = url;
+        d3.json(url, function(d) {
+            return loaded(name, d);
+            });
+        return loader;
+      },
+csv: function(name, url) {
+       toload[name] = url;
+       d3.csv(url, function(d) {
+           return loaded(name, d);
+           });
+       return loader;
+     },
+onload: function(callback) {
+          loadedCallback = callback;
+          notifyIfAll();
+        }
+    };
+    return loader;
+  };
+
+var Company = 'Company';
+var country = "Country";
+var industry = "Industry Group";
+var mdc = "Market Debt to capital ratio";
+var roe = "Return on Equity";
+var npm = "Net Profit Margin";
+var mc = d3.map();
+
+d3.loadData()
+  .csv('company', 'eurocompfirm.csv')
+  .csv('countrycode','country-codes.csv')
+  .onload(function(data) {
+
+
+
+
+
+
+
+
+
+
+
+      data.company.forEach(function(d) {
+        var companyid = d[Company];
+        var countryid = d[country];
+        var market = parseFloat(d["Market"]);
+
+
+        var lastmarket = mc.get(d[country]);
+
+        if(lastmarket != undefined){
+        marketl = market+lastmarket
+
+        }else{
+        marketl = market;
+        }
+
+
+        /*var lastmarket = mc.get(d[country]);
+
+          console.log(market);*/
+        mc.set(countryid,marketl);
+
+
+      });
+
+      data.countrycode.forEach(function(d){
+
+          var code = d["2code"];
+
+          var name = d["name"];
+          console.log(name);
+
+          var value = mc.get(name);
+          console.log(value);
+          if(value != undefined){
+          mc.set(code,value);
+          }
+
+
+          })
+
+
+      console.log(mc);
+
+
+
+
+  })
+
+
+d3.json("https://gist.githubusercontent.com/Hedva/8226636/raw/9a5ab470997350d59f80d71ff3646996aad27681/europe.json", function(json) {
+
+    //Bind data and create one path per GeoJSON feature
+    svg.selectAll("path")
+    .data(json.features)
+    .enter()
+    .append("path")
+    .attr("d", path)
+    .attr("transform", "translate(0,300)")
+    .attr('id', function(feature) { return feature.id })
+    .attr('data-country', function(feature) { return feature.properties.name; })
+    .style("fill", function(d) { return Color(mc.get(d.id)) })
+    .on("click", clicked);
+
+    svg.selectAll("path")
+    .data(json.id)
+    .enter()
+    .attr("d", path)
+    .style("fill", "red")
+    g.append("path")
+    .datum("geometry")
+    .attr("id", "state-borders")
+    .attr("d", path);
+
+});
+
+function clicked(d){
+
+
+  svg.selectAll("path")
+    .style("fill", function(d) { return Color(mc.get(d.id)) })
+    .attr("stroke-width",0)
+
+    d3.select(this)
+    .style("fill","transparant")
+    .attr("stroke","blue")
+    .attr("stroke-width",5)
+
+
+
+    console.log("click");
+  var centroid = path.centroid(d),
+    translate = projection.translate();
+
+  console.log(centroid);
+  console.log(translate);
+  console.log(translate[0]);
+  console.log(centroid[0]);
+  console.log(translate[0] - centroid[0] + w / 2);
+  console.log(translate[1] - centroid[1] + h / 2);
+
+  projection.translate([
+      translate[0] - centroid[0] + w / 2,
+      translate[1] - centroid[1] + h / 2
+      ]);
+
+
+
+  zoom.translate(projection.translate());
+
+  g.selectAll("path").transition()
+    .duration(700)
+    .attr("d", path);
+
+  showCountryInfo($(this).attr('data-country'));
+
+}
+
+function showCountryInfo(country) {
+  $('#myCanvas').html(
+    '<h1>' + country + '</h1>'
+  );
+}
+
+function zoomed() {
+  projection.translate(d3.event.translate).scale(d3.event.scale);
+  g.selectAll("path").attr("d", path);
+}
+
+
+
+</script>
+</canvas>
 </body>
 </html>
