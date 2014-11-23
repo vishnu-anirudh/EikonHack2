@@ -23,5 +23,8 @@ d3.csv('data/londonstockexchange.csv', function(data) {
     .style('margin', '2px 0')
     .style('background', 'red')
     .style('white-space', 'nowrap')
+    .append('span')
+    .style('position', 'relative')
+    .style('top', '2px')
     .text(function(d) { return d.Company + ' - ' + '£' + Math.round(d.MarketCapInMillions) + 'm'; });
 });
