@@ -1,4 +1,4 @@
-d3.csv('data/companylist.csv', function(data) {
+d3.csv('data/londonstockexchange.csv', function(data) {
   data.sort(function(a, b) {
     var aValue = parseInt(a.MarketCapInMillions);
     var bValue = parseInt(b.MarketCapInMillions);
